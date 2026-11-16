@@ -66,6 +66,28 @@ services:
       redis:
         condition: service_healthy
 
+  # Publishes catalog's outbox events to RabbitMQ.
+  catalog-outbox:
+    <<: *php-service
+    working_dir: /workspace/services/catalog
+    command: ["php", "artisan", "outbox:relay"]
+    healthcheck:
+      disable: true
+    environment:
+      APP_NAME: catalog
+      DB_HOST: postgres
+      DB_DATABASE: catalog
+      DB_USERNAME: ${POSTGRES_USER:-ecommerce}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER:-ecommerce}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
   postgres:
     image: postgres:17-alpine
     environment:

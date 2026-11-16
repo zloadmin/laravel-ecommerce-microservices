@@ -6,11 +6,13 @@ use App\Http\Resources\ProductResource;
 use App\Models\Category;
 use App\Models\Product;
 use Ecommerce\Shared\Auth\AuthenticatedUser;
+use Ecommerce\Shared\Messaging\Outbox;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -87,23 +89,52 @@ class ProductController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $product = Product::create($this->validated($request));
+        $data = $this->validated($request);
+
+        // The event is stored in the same transaction as the change (outbox).
+        $product = DB::transaction(function () use ($data): Product {
+            $product = Product::create($data);
+            Outbox::record('product.created', $this->snapshot($product));
+
+            return $product;
+        });
 
         return (new ProductResource($product->load('category')))->response()->setStatusCode(201);
     }
 
     public function update(Request $request, Product $product): ProductResource
     {
-        $product->update($this->validated($request, $product));
+        $data = $this->validated($request, $product);
+
+        DB::transaction(function () use ($product, $data): void {
+            $product->update($data);
+
+            if ($product->wasChanged()) {
+                Outbox::record('product.updated', $this->snapshot($product));
+            }
+        });
 
         return new ProductResource($product->load('category'));
     }
 
     public function destroy(Product $product): Response
     {
-        $product->delete();
+        DB::transaction(function () use ($product): void {
+            $product->delete();
+            Outbox::record('product.deleted', ['id' => $product->id]);
+        });
 
         return response()->noContent();
+    }
+
+    /**
+     * The product state carried by product.created and product.updated.
+     *
+     * @return array<string, mixed>
+     */
+    private function snapshot(Product $product): array
+    {
+        return $product->only(['id', 'category_id', 'name', 'slug', 'sku', 'price_amount', 'currency', 'is_active']);
     }
 
     /**

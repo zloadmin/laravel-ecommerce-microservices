@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use Ecommerce\Shared\Messaging\Event;
 use Ecommerce\Shared\Testing\JwtTestKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ProductTest extends TestCase
@@ -158,5 +160,38 @@ class ProductTest extends TestCase
 
         $this->deleteJson("/api/v1/products/{$product->id}")->assertNoContent();
         $this->assertDatabaseCount('products', 0);
+    }
+
+    public function test_product_changes_are_recorded_in_the_outbox(): void
+    {
+        $this->withToken(JwtTestKeys::token(role: 'admin'));
+
+        $id = $this->withHeaders(['X-Correlation-ID' => 'corr-catalog-1'])
+            ->postJson('/api/v1/products', ['name' => 'Lamp', 'sku' => 'LMP-1', 'price_amount' => 2500])
+            ->json('data.id');
+        $this->patchJson("/api/v1/products/$id", ['price_amount' => 2000])->assertOk();
+        $this->patchJson("/api/v1/products/$id", ['price_amount' => 2000])->assertOk(); // no change, no event
+        $this->deleteJson("/api/v1/products/$id")->assertNoContent();
+
+        $events = DB::table('outbox_messages')->orderBy('id')->pluck('body')->map(fn (string $body) => Event::fromJson($body));
+
+        $this->assertSame(['product.created', 'product.updated', 'product.deleted'], $events->pluck('type')->all());
+        $this->assertSame('catalog', $events[0]->source);
+        $this->assertSame('corr-catalog-1', $events[0]->correlationId);
+        $this->assertSame(
+            ['id' => $id, 'category_id' => null, 'name' => 'Lamp', 'slug' => 'lamp', 'sku' => 'LMP-1', 'price_amount' => 2500, 'currency' => 'USD', 'is_active' => true],
+            $events[0]->payload,
+        );
+        $this->assertSame(2000, $events[1]->payload['price_amount']);
+        $this->assertSame(['id' => $id], $events[2]->payload);
+    }
+
+    public function test_rejected_writes_record_no_event(): void
+    {
+        $this->withToken(JwtTestKeys::token(role: 'admin'))
+            ->postJson('/api/v1/products', ['name' => 'No price', 'sku' => 'NOP-1'])
+            ->assertStatus(422);
+
+        $this->assertDatabaseCount('outbox_messages', 0);
     }
 }

@@ -2,7 +2,7 @@ SERVICES := gateway auth catalog
 DB_SERVICES := auth catalog
 s ?= gateway
 
-.PHONY: setup keys migrate seed up down ps logs sh test test-all pint
+.PHONY: setup keys migrate seed up down ps logs sh test test-shared test-all pint
 
 setup: ## First-time setup: env files, images, dependencies, app keys, JWT keys, databases
 	@test -f .env || cp .env.example .env
@@ -45,7 +45,10 @@ sh: ## Shell into a service: make sh s=gateway
 test: ## Run one service's tests: make test s=gateway
 	docker compose run --rm --no-deps $(s) php artisan test
 
-test-all:
+test-shared: ## Run the shared package's own tests
+	docker compose run --rm --no-deps -w /workspace/packages/shared gateway sh -c 'composer install -q && vendor/bin/phpunit'
+
+test-all: test-shared
 	@for svc in $(SERVICES); do \
 		docker compose run --rm --no-deps $$svc php artisan test || exit 1; \
 	done
