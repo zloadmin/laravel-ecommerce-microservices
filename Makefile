@@ -30,8 +30,8 @@ seed: ## Seed local development data (admin@example.com / password, sample catal
 up: ## Start the whole stack
 	docker compose up -d
 
-restart-workers: ## Reload code in the long-running outbox and consumer workers
-	docker compose restart catalog-outbox catalog-consumer orders-outbox orders-consumer
+restart-workers: ## Reload code in the long-running outbox, consumer and scheduler workers
+	docker compose restart catalog-outbox catalog-consumer orders-outbox orders-consumer orders-scheduler
 
 down: ## Stop the stack
 	docker compose down

@@ -85,6 +85,8 @@ Checkout is a saga across two services; no step calls another service inside a d
 3. Orders consumes the answer and moves the order to `confirmed` or `cancelled`
    (`cancellation_reason: insufficient_stock`). Clients poll `GET /orders/{id}` for the outcome.
 4. Cancelling publishes `order.cancelled`; catalog puts the reserved stock back.
+5. An order still `pending` after 15 minutes (`ORDER_PENDING_TIMEOUT_MINUTES`) is cancelled as `expired`
+   by the `orders-scheduler` container, so an outage in catalog cannot leave orders in limbo.
 
 ## Events
 
@@ -115,7 +117,7 @@ make migrate          # run migrations for all services
 make sh s=gateway     # shell into a service container
 make logs s=gateway
 make pint s=gateway   # format code
-make restart-workers  # reload code in the outbox and consumer workers
+make restart-workers  # reload code in the outbox, consumer and scheduler workers
 make down
 ```
 

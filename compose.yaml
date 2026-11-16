@@ -172,6 +172,24 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  # Runs scheduled tasks: cancels orders stuck in "pending".
+  orders-scheduler:
+    <<: *php-service
+    working_dir: /workspace/services/orders
+    command: ["php", "artisan", "schedule:work"]
+    healthcheck:
+      disable: true
+    environment:
+      APP_NAME: orders
+      DB_HOST: postgres
+      DB_DATABASE: orders
+      DB_USERNAME: ${POSTGRES_USER:-ecommerce}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      CACHE_STORE: array
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:17-alpine
     environment:

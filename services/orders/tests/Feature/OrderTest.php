@@ -198,6 +198,30 @@ class OrderTest extends TestCase
         $this->assertNotContains('order.confirmed', array_column($this->published(), 'type'));
     }
 
+    public function test_pending_orders_expire_after_the_timeout(): void
+    {
+        $stale = $this->placeOrder(self::USER);
+        $confirmed = $this->placeOrder(self::USER);
+        $this->deliver('stock.reserved', ['order_id' => $confirmed]);
+
+        $this->travel(16)->minutes();
+        $fresh = $this->placeOrder(self::USER);
+
+        $this->artisan('orders:expire-pending')->assertSuccessful();
+
+        $this->assertSame([Order::CANCELLED, 'expired'], [Order::find($stale)->status, Order::find($stale)->cancellation_reason]);
+        $this->assertSame(Order::CONFIRMED, Order::find($confirmed)->status);
+        $this->assertSame(Order::PENDING, Order::find($fresh)->status);
+
+        $cancelled = collect($this->published())->where('type', 'order.cancelled');
+        $this->assertCount(1, $cancelled);
+        $this->assertSame(['order_id' => $stale, 'user_id' => self::USER, 'reason' => 'expired'], $cancelled->first()->payload);
+
+        // A stock answer that arrives after expiry does not revive the order.
+        $this->deliver('stock.reserved', ['order_id' => $stale]);
+        $this->assertSame(Order::CANCELLED, Order::find($stale)->status);
+    }
+
     private function as(?string $userId = null, string $role = 'customer'): static
     {
         return $this->withToken(JwtTestKeys::token($userId, $role));

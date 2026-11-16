@@ -625,7 +625,8 @@ components:
       type: string
       enum: [pending, confirmed, cancelled]
       description: |
-        `pending`: waiting for stock to be reserved. `confirmed`: stock is reserved.
+        `pending`: waiting for stock to be reserved (cancelled as `expired` after 15 minutes).
+        `confirmed`: stock is reserved.
         `cancelled`: see `cancellation_reason`.
     Order:
       type: object
@@ -635,7 +636,7 @@ components:
         status: { $ref: "#/components/schemas/OrderStatus" }
         cancellation_reason:
           type: [string, "null"]
-          examples: [insufficient_stock, cancelled_by_customer, cancelled_by_admin]
+          examples: [insufficient_stock, cancelled_by_customer, cancelled_by_admin, expired]
         total: { $ref: "#/components/schemas/Money" }
         items:
           type: array
