@@ -101,7 +101,26 @@ for ($i = 0; $i < 60 && $restored !== 3; $i++) {
     $restored = $stock($productId, $admin);
 }
 check('stock is restored to 3', 3, $restored);
-check('customer sees both orders', 2, count(call('GET', "$base/orders", null, $customer)[1]['data'] ?? []));
+check('customer sees both orders so far', 2, count(call('GET', "$base/orders", null, $customer)[1]['data'] ?? []));
+
+echo "Cart\n";
+$guestCartId = sprintf('%s-%s-4%s-8%s-%s', bin2hex(random_bytes(4)), bin2hex(random_bytes(2)), substr(bin2hex(random_bytes(2)), 1), substr(bin2hex(random_bytes(2)), 1), bin2hex(random_bytes(6)));
+$guest = ["X-Cart-Id: $guestCartId"];
+[$status, $cart] = call('POST', "$base/cart/items", ['product_id' => $productId, 'quantity' => 1], $guest);
+check('guest adds the product to a cart', [200, 1], [$status, $cart['data']['item_count'] ?? null]);
+check('cart shows the catalog price', ['amount' => 1250, 'currency' => 'USD'], $cart['data']['total'] ?? null);
+check('guest cannot check out', 401, call('POST', "$base/cart/checkout", null, $guest)[0]);
+
+[$status, $cart] = call('POST', "$base/cart/merge", ['guest_cart_id' => $guestCartId], $customer);
+check('guest cart is merged after login', [200, 1], [$status, $cart['data']['item_count'] ?? null]);
+[$status, $cart] = call('PUT', "$base/cart/items/$productId", ['quantity' => 2], $customer);
+check('customer changes the quantity to 2', [200, 2], [$status, $cart['data']['items'][0]['quantity'] ?? null]);
+
+[$status, $placed] = call('POST', "$base/cart/checkout", null, $customer);
+check('cart checkout creates an order', [201, 2500], [$status, $placed['data']['total']['amount'] ?? null]);
+check('cart is empty after checkout', 0, call('GET', "$base/cart", null, $customer)[1]['data']['item_count'] ?? null);
+check('order from the cart becomes confirmed', 'confirmed', settledOrder("$base/orders/".($placed['data']['id'] ?? ''), $customer)['status'] ?? null);
+check('stock is reduced to 1', 1, $stock($productId, $admin));
 
 echo "Cleanup\n";
 check('admin deletes the product', 204, call('DELETE', "$base/products/$productId", null, $admin)[0]);

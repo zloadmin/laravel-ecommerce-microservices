@@ -10,6 +10,7 @@ An e-commerce REST API built as a set of independent Laravel services.
 | Auth | `services/auth` | Users, registration, login, JWT (RS256), refresh tokens |
 | Catalog | `services/catalog` | Products, categories and stock |
 | Orders | `services/orders` | Checkout and order lifecycle |
+| Cart | `services/cart` | Guest and customer carts in Redis, checkout hand-off to orders |
 | Shared package | `packages/shared` | Cross-cutting infrastructure code only (error format, JWT verification, middleware) |
 
 - **Database per service** (PostgreSQL): `auth`, `catalog`, `orders`. No cross-service joins.
@@ -68,6 +69,15 @@ All paths are served by the gateway under `/api/v1`. The full contract is in [`d
 | POST | `/orders` | Bearer | Checkout: `{"items": [{"product_id", "quantity"}]}`, optional `Idempotency-Key` header |
 | GET | `/orders`, `/orders/{id}` | Bearer | Own orders (admins: all, filter by `user_id`); filter by `status` |
 | POST | `/orders/{id}/cancel` | Bearer | Cancel a pending or confirmed order |
+| GET, DELETE | `/cart` | Bearer or `X-Cart-Id` | View or empty the cart |
+| POST | `/cart/items` | Bearer or `X-Cart-Id` | Add a product: `{"product_id", "quantity"}` (adds to the existing quantity) |
+| PUT, DELETE | `/cart/items/{product_id}` | Bearer or `X-Cart-Id` | Set the quantity, or remove the line |
+| POST | `/cart/merge` | Bearer | Move a guest cart into the customer's: `{"guest_cart_id"}` |
+| POST | `/cart/checkout` | Bearer | Create an order from the cart, then empty it |
+
+Guests identify their cart with an `X-Cart-Id` header holding a UUID they generate; customers use their token.
+A cart stores only product ids and quantities, so it always shows current catalog prices, and it expires
+30 days after its last change.
 
 Product list parameters: `q` (name or SKU), `category` (id or slug), `min_price`, `max_price`, `ids[]`,
 `sort` (`newest`, `oldest`, `price`, `-price`, `name`, `-name`), `per_page` (max 100) and `cursor`
