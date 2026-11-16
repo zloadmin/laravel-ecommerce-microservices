@@ -1,8 +1,8 @@
-SERVICES := gateway auth catalog
-DB_SERVICES := auth catalog
+SERVICES := gateway auth catalog orders
+DB_SERVICES := auth catalog orders
 s ?= gateway
 
-.PHONY: setup keys migrate seed up down ps logs sh test test-shared test-all pint
+.PHONY: setup keys migrate seed up restart-workers down ps logs sh test test-shared test-all pint
 
 setup: ## First-time setup: env files, images, dependencies, app keys, JWT keys, databases
 	@test -f .env || cp .env.example .env
@@ -29,6 +29,9 @@ seed: ## Seed local development data (admin@example.com / password, sample catal
 
 up: ## Start the whole stack
 	docker compose up -d
+
+restart-workers: ## Reload code in the long-running outbox and consumer workers
+	docker compose restart catalog-outbox catalog-consumer orders-outbox orders-consumer
 
 down: ## Stop the stack
 	docker compose down

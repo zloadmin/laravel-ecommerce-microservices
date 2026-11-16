@@ -24,6 +24,7 @@ class ProductFactory extends Factory
             'price_amount' => fake()->numberBetween(500, 50000),
             'currency' => 'USD',
             'is_active' => true,
+            'stock' => 10,
         ];
     }
 

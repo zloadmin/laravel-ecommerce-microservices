@@ -20,6 +20,7 @@ class ProductResource extends JsonResource
             'description' => $this->description,
             'price' => ['amount' => $this->price_amount, 'currency' => $this->currency],
             'is_active' => $this->is_active,
+            'stock' => $this->stock,
             'category' => new CategoryResource($this->whenLoaded('category')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

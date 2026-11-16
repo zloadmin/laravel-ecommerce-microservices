@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
                     'description' => "$name from the $categoryName range.",
                     'price_amount' => $price,
                     'currency' => 'USD',
+                    'stock' => 25,
                 ]);
             }
         }

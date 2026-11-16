@@ -8,8 +8,8 @@ An e-commerce REST API built as a set of independent Laravel services.
 |---|---|---|
 | Gateway | `services/gateway` | Single public entry point: routing, rate limiting, correlation IDs |
 | Auth | `services/auth` | Users, registration, login, JWT (RS256), refresh tokens |
-| Catalog | `services/catalog` | Products and categories, filtering, cursor pagination |
-| Orders | `services/orders` (planned) | Checkout and order lifecycle |
+| Catalog | `services/catalog` | Products, categories and stock |
+| Orders | `services/orders` | Checkout and order lifecycle |
 | Shared package | `packages/shared` | Cross-cutting infrastructure code only (error format, JWT verification, middleware) |
 
 - **Database per service** (PostgreSQL): `auth`, `catalog`, `orders`. No cross-service joins.
@@ -62,12 +62,27 @@ All paths are served by the gateway under `/api/v1`.
 | POST, PATCH, DELETE | `/categories`, `/categories/{id}` | admin | Manage categories |
 | GET | `/products` | none | List products (see filters below) |
 | GET | `/products/{id-or-slug}` | none | View a product |
-| POST, PATCH, DELETE | `/products`, `/products/{id}` | admin | Manage products |
+| POST, PATCH, DELETE | `/products`, `/products/{id}` | admin | Manage products, including `stock` |
+| POST | `/orders` | Bearer | Checkout: `{"items": [{"product_id", "quantity"}]}`, optional `Idempotency-Key` header |
+| GET | `/orders`, `/orders/{id}` | Bearer | Own orders (admins: all, filter by `user_id`); filter by `status` |
+| POST | `/orders/{id}/cancel` | Bearer | Cancel a pending or confirmed order |
 
 Product list parameters: `q` (name or SKU), `category` (id or slug), `min_price`, `max_price`, `ids[]`,
 `sort` (`newest`, `oldest`, `price`, `-price`, `name`, `-name`), `per_page` (max 100) and `cursor`
 (from `meta.next_cursor`). Prices are integers in minor units: `{"amount": 129900, "currency": "USD"}`.
 Guests and customers see only active products; admins see all.
+
+## Checkout flow
+
+Checkout is a saga across two services; no step calls another service inside a database transaction.
+
+1. `POST /orders`: orders reads current prices from catalog over REST, stores the order as `pending`
+   with a copy of each product's name, SKU and price, and records `order.placed`. The response is immediate.
+2. Catalog consumes `order.placed` and reserves stock for all lines or none, then publishes
+   `stock.reserved` or `stock.rejected`.
+3. Orders consumes the answer and moves the order to `confirmed` or `cancelled`
+   (`cancellation_reason: insufficient_stock`). Clients poll `GET /orders/{id}` for the outcome.
+4. Cancelling publishes `order.cancelled`; catalog puts the reserved stock back.
 
 ## Events
 
@@ -75,6 +90,14 @@ Guests and customers see only active products; admins see all.
 |---|---|---|
 | `product.created`, `product.updated` | catalog | `id`, `category_id`, `name`, `slug`, `sku`, `price_amount`, `currency`, `is_active` |
 | `product.deleted` | catalog | `id` |
+| `stock.reserved` | catalog | `order_id` |
+| `stock.rejected` | catalog | `order_id`, `reason`, `product_id` |
+| `order.placed` | orders | `order_id`, `user_id`, `total_amount`, `currency`, `items[]` (`product_id`, `quantity`, `unit_price_amount`) |
+| `order.confirmed` | orders | `order_id`, `user_id` |
+| `order.cancelled` | orders | `order_id`, `user_id`, `reason` |
+
+Workers: `catalog-outbox` and `orders-outbox` publish; `catalog-consumer` and `orders-consumer` handle events.
+They are long-running PHP processes, so restart them after changing code: `make restart-workers`.
 
 Envelope: `id`, `type`, `source`, `occurred_at`, `correlation_id`, `payload`.
 
@@ -88,5 +111,6 @@ make migrate          # run migrations for all services
 make sh s=gateway     # shell into a service container
 make logs s=gateway
 make pint s=gateway   # format code
+make restart-workers  # reload code in the outbox and consumer workers
 make down
 ```

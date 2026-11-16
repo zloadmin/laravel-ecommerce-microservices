@@ -13,14 +13,14 @@ class Product extends Model
     /** @use HasFactory<ProductFactory> */
     use HasFactory, HasUuids;
 
-    protected $fillable = ['category_id', 'name', 'slug', 'sku', 'description', 'price_amount', 'currency', 'is_active'];
+    protected $fillable = ['category_id', 'name', 'slug', 'sku', 'description', 'price_amount', 'currency', 'is_active', 'stock'];
 
-    protected $attributes = ['is_active' => true];
+    protected $attributes = ['is_active' => true, 'stock' => 0];
 
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['price_amount' => 'integer', 'is_active' => 'boolean'];
+        return ['price_amount' => 'integer', 'is_active' => 'boolean', 'stock' => 'integer'];
     }
 
     /** @return BelongsTo<Category, $this> */

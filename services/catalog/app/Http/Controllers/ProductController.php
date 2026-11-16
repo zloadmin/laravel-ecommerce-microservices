@@ -179,6 +179,7 @@ class ProductController extends Controller
             'currency' => [$required, 'string', 'regex:/^[A-Z]{3}$/'],
             'category_id' => ['sometimes', 'nullable', 'uuid', Rule::exists('categories', 'id')],
             'is_active' => ['sometimes', 'boolean'],
+            'stock' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
         ]);
     }
 }

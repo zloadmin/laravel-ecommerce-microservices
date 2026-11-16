@@ -1,10 +1,16 @@
 <?php
 
+use App\Handlers\ReleaseStock;
+use App\Handlers\ReserveStock;
+
 return [
 
-    // Catalog publishes product.created, product.updated and product.deleted.
+    // Publishes: product.created, product.updated, product.deleted, stock.reserved, stock.rejected.
     'enabled' => true,
 
-    'handlers' => [],
+    'handlers' => [
+        'order.placed' => ReserveStock::class,
+        'order.cancelled' => ReleaseStock::class,
+    ],
 
 ];
