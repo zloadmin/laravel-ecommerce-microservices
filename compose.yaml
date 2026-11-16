@@ -1,0 +1,79 @@
+name: ecommerce
+
+x-php-service: &php-service
+  build:
+    context: .
+    dockerfile: infra/docker/php/Dockerfile
+    target: dev
+  image: ecommerce/php-dev
+  volumes:
+    - .:/workspace
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://localhost:8080/up"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+
+services:
+  gateway:
+    <<: *php-service
+    working_dir: /workspace/services/gateway
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    environment:
+      APP_NAME: gateway
+      CACHE_STORE: redis
+      REDIS_HOST: redis
+      AUTH_SERVICE_URL: http://auth:8080
+      CATALOG_SERVICE_URL: http://catalog:8080
+      ORDERS_SERVICE_URL: http://orders:8080
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+    ports:
+      - "${POSTGRES_PORT:-54320}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-63790}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-ecommerce}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-secret}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_UI_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
