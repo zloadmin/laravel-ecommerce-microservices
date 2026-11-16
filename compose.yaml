@@ -204,6 +204,25 @@ services:
       redis:
         condition: service_healthy
 
+  # Next.js storefront and admin. Talks to the gateway server-side, so only the gateway URL is needed.
+  # node_modules and .next live in volumes: the host's copies are built for macOS, not Linux.
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["sh", "-c", "npm ci --no-audit --no-fund && npm run dev -- --hostname 0.0.0.0 --port 3000"]
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      NEXT_TELEMETRY_DISABLED: 1
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+      - frontend-next:/app/.next
+    restart: unless-stopped
+    depends_on:
+      - gateway
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -249,3 +268,5 @@ services:
 volumes:
   postgres-data:
   rabbitmq-data:
+  frontend-node-modules:
+  frontend-next:

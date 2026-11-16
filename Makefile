@@ -6,7 +6,8 @@ s ?= gateway
 # environment variables win over phpunit.xml. Tests must not touch them, so override explicitly.
 TEST_ENV := -e APP_ENV=testing -e CACHE_STORE=array -e DB_CONNECTION=sqlite -e DB_DATABASE=:memory: -e LOG_CHANNEL=null
 
-.PHONY: setup keys migrate seed up restart-workers down ps logs sh test test-shared test-all e2e pint lint
+.PHONY: setup keys migrate seed up restart-workers down ps logs sh test test-shared test-all e2e pint lint \
+	frontend-install frontend-dev frontend-check frontend-types
 
 setup: ## First-time setup: env files, images, dependencies, app keys, JWT keys, databases
 	@test -f .env || cp .env.example .env
@@ -70,3 +71,15 @@ lint: ## Check code style in every service without changing files
 	@for svc in $(SERVICES); do \
 		docker compose run --rm --no-deps $$svc vendor/bin/pint --test || exit 1; \
 	done
+
+frontend-install: ## Install the frontend's dependencies on the host
+	cd frontend && npm ci
+
+frontend-dev: ## Run the frontend on the host against the gateway (http://localhost:3000)
+	cd frontend && GATEWAY_URL=http://localhost:$${GATEWAY_PORT:-8080} npm run dev
+
+frontend-check: ## Lint and type-check the frontend
+	cd frontend && npm run lint && npm run typecheck
+
+frontend-types: ## Regenerate the frontend's API types from docs/openapi.yaml
+	cd frontend && npm run api:types

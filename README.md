@@ -12,6 +12,7 @@ An e-commerce REST API built as a set of independent Laravel services.
 | Orders | `services/orders` | Checkout and order lifecycle |
 | Cart | `services/cart` | Guest and customer carts in Redis, checkout hand-off to orders |
 | Shared package | `packages/shared` | Cross-cutting infrastructure code only (error format, JWT verification, middleware) |
+| Frontend | `frontend` | Next.js storefront and admin UI; calls the gateway server-side (see [`frontend/README.md`](frontend/README.md)) |
 
 - **Database per service** (PostgreSQL): `auth`, `catalog`, `orders`. No cross-service joins.
 - **Sync calls** go over REST; **domain events** go over RabbitMQ.
@@ -41,6 +42,7 @@ curl localhost:8080/api/v1/health
 
 | What | Where |
 |---|---|
+| Storefront (frontend) | http://localhost:3000 |
 | API (gateway) | http://localhost:8080 |
 | RabbitMQ UI | http://localhost:15672 (ecommerce / secret) |
 | PostgreSQL | localhost:54320 (ecommerce / secret) |
@@ -128,6 +130,9 @@ make sh s=gateway     # shell into a service container
 make logs s=gateway
 make pint s=gateway   # format code
 make restart-workers  # reload code in the outbox, consumer and scheduler workers
+make frontend-dev     # run the frontend on the host instead of in Docker
+make frontend-check   # lint and type-check the frontend
+make frontend-types   # regenerate the frontend's API types after changing docs/openapi.yaml
 make down
 ```
 
