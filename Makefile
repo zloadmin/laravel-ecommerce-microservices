@@ -2,7 +2,7 @@ SERVICES := gateway auth catalog orders
 DB_SERVICES := auth catalog orders
 s ?= gateway
 
-.PHONY: setup keys migrate seed up restart-workers down ps logs sh test test-shared test-all pint
+.PHONY: setup keys migrate seed up restart-workers down ps logs sh test test-shared test-all e2e pint lint
 
 setup: ## First-time setup: env files, images, dependencies, app keys, JWT keys, databases
 	@test -f .env || cp .env.example .env
@@ -56,5 +56,13 @@ test-all: test-shared
 		docker compose run --rm --no-deps $$svc php artisan test || exit 1; \
 	done
 
+e2e: ## End-to-end checkout test against the running stack (needs: make seed, make up)
+	docker compose run --rm --no-deps gateway php /workspace/tests/e2e/checkout.php
+
 pint: ## Format one service: make pint s=gateway
 	docker compose run --rm --no-deps $(s) vendor/bin/pint
+
+lint: ## Check code style in every service without changing files
+	@for svc in $(SERVICES); do \
+		docker compose run --rm --no-deps $$svc vendor/bin/pint --test || exit 1; \
+	done

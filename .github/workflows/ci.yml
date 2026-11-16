@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  shared:
+    name: Shared package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/shared
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_sqlite, sockets, bcmath, intl
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit
+
+  services:
+    name: ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [gateway, auth, catalog, orders]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_sqlite, pdo_pgsql, redis, sockets, bcmath, intl
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+      - run: cp .env.example .env && php artisan key:generate
+      - name: Code style
+        run: vendor/bin/pint --test
+      - name: Tests
+        run: php artisan test
+
+  e2e:
+    name: End-to-end checkout
+    runs-on: ubuntu-latest
+    needs: [shared, services]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and prepare the stack
+        run: make setup seed
+      - name: Start the stack
+        run: docker compose up -d --wait
+      - name: Checkout flow
+        run: make e2e
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200

@@ -6,6 +6,7 @@ use Ecommerce\Shared\Auth\JwtVerifier;
 use Ecommerce\Shared\Http\Middleware\Authenticate;
 use Ecommerce\Shared\Http\Middleware\RequireRole;
 use Ecommerce\Shared\Messaging\Console\ConsumeEvents;
+use Ecommerce\Shared\Messaging\Console\PruneMessages;
 use Ecommerce\Shared\Messaging\Console\RelayOutbox;
 use Ecommerce\Shared\Messaging\EventConsumer;
 use Ecommerce\Shared\Messaging\EventPublisher;
@@ -46,7 +47,7 @@ final class SharedServiceProvider extends ServiceProvider
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
             if ($this->app->runningInConsole()) {
-                $this->commands([RelayOutbox::class, ConsumeEvents::class]);
+                $this->commands([RelayOutbox::class, ConsumeEvents::class, PruneMessages::class]);
             }
         }
     }

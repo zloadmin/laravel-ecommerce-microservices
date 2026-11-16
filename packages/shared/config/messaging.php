@@ -19,6 +19,10 @@ return [
         'vhost' => env('RABBITMQ_VHOST', '/'),
     ],
 
+    // Published outbox rows and deduplication records are deleted after this
+    // many days. The outbox:relay worker prunes once an hour.
+    'retention_days' => (int) env('MESSAGING_RETENTION_DAYS', 7),
+
     // One topic exchange carries every domain event; the routing key is the event type.
     'exchange' => 'ecommerce.events',
 

@@ -1,0 +1,667 @@
+openapi: 3.1.0
+info:
+  title: E-commerce API
+  version: 1.0.0
+  summary: Public API of the e-commerce platform, served by the gateway.
+  description: |
+    All requests go through the gateway, which routes them to the auth, catalog and orders services.
+
+    - Money is an integer in minor units plus a currency code: `{"amount": 129900, "currency": "USD"}`.
+    - Lists use cursor pagination: pass `meta.next_cursor` back as `cursor`, or follow `links.next`.
+    - Every response carries an `X-Correlation-ID` header; send your own to trace a request.
+    - Checkout is asynchronous: a new order is `pending` until stock is reserved, then becomes
+      `confirmed` or `cancelled`. Poll `GET /orders/{id}` for the outcome.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local Docker Compose stack
+tags:
+  - name: Auth
+  - name: Profile
+  - name: Categories
+  - name: Products
+  - name: Orders
+security: []
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [Auth]
+      summary: Gateway health check
+      responses:
+        "200":
+          description: The gateway is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service: { type: string, examples: [gateway] }
+                  status: { type: string, examples: [ok] }
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [Auth]
+      summary: Create a customer account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, maxLength: 255 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        "201": { $ref: "#/components/responses/Session" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      summary: Exchange credentials for tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "401":
+          description: Wrong email or password (`invalid_credentials`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [Auth]
+      summary: Rotate the refresh token
+      description: |
+        Refresh tokens are single-use. Presenting one that was already used revokes
+        every session of that user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshTokenRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "401":
+          description: The refresh token is invalid, expired or already used (`invalid_refresh_token`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [Auth]
+      summary: Revoke a refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshTokenRequest" }
+      responses:
+        "204":
+          description: Revoked (also returned for an unknown token).
+
+  /users/me:
+    get:
+      operationId: getProfile
+      tags: [Profile]
+      summary: Current user
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The authenticated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+    patch:
+      operationId: updateProfile
+      tags: [Profile]
+      summary: Update name or password
+      description: Changing the password requires `current_password` and signs out all sessions.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 255 }
+                password: { type: string, minLength: 8 }
+                current_password: { type: string }
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [Categories]
+      summary: List all categories, ordered by name
+      responses:
+        "200":
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Category" }
+    post:
+      operationId: createCategory
+      tags: [Categories]
+      summary: Create a category (admin)
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryInput" }
+      responses:
+        "201": { $ref: "#/components/responses/Category" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /categories/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+    get:
+      operationId: getCategory
+      tags: [Categories]
+      summary: View a category
+      responses:
+        "200": { $ref: "#/components/responses/Category" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateCategory
+      tags: [Categories]
+      summary: Update a category (admin)
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryInput" }
+      responses:
+        "200": { $ref: "#/components/responses/Category" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteCategory
+      tags: [Categories]
+      summary: Delete an empty category (admin)
+      security: [{ bearer: [] }]
+      responses:
+        "204":
+          description: Deleted.
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The category still has products (`category_not_empty`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /products:
+    get:
+      operationId: listProducts
+      tags: [Products]
+      summary: List products
+      description: Guests and customers see active products only; admins see all.
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: q, in: query, description: Search in name and SKU, schema: { type: string, maxLength: 100 } }
+        - { name: category, in: query, description: Category id or slug, schema: { type: string } }
+        - { name: min_price, in: query, description: Minor units, schema: { type: integer, minimum: 0 } }
+        - { name: max_price, in: query, description: Minor units, schema: { type: integer, minimum: 0 } }
+        - name: "ids[]"
+          in: query
+          description: Only these products (up to 100)
+          schema: { type: array, maxItems: 100, items: { type: string, format: uuid } }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [newest, oldest, price, -price, name, -name], default: newest }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          description: One page of products.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Product" }
+                  links: { $ref: "#/components/schemas/CursorLinks" }
+                  meta: { $ref: "#/components/schemas/CursorMeta" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    post:
+      operationId: createProduct
+      tags: [Products]
+      summary: Create a product (admin)
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/ProductInput" }
+                - { required: [name, sku, price_amount] }
+      responses:
+        "201": { $ref: "#/components/responses/Product" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /products/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Product id. `GET` also accepts the product's slug.
+        schema: { type: string }
+    get:
+      operationId: getProduct
+      tags: [Products]
+      summary: View a product by id or slug
+      security: [{}, { bearer: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/Product" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateProduct
+      tags: [Products]
+      summary: Update a product, including its stock (admin)
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductInput" }
+      responses:
+        "200": { $ref: "#/components/responses/Product" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteProduct
+      tags: [Products]
+      summary: Delete a product (admin)
+      security: [{ bearer: [] }]
+      responses:
+        "204":
+          description: Deleted. Existing orders keep their copy of the product data.
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [Orders]
+      summary: List orders, newest first
+      description: Customers get their own orders; admins get everyone's.
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/OrderStatus" } }
+        - { name: user_id, in: query, description: Admins only; ignored otherwise, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          description: One page of orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Order" }
+                  links: { $ref: "#/components/schemas/CursorLinks" }
+                  meta: { $ref: "#/components/schemas/CursorMeta" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+    post:
+      operationId: placeOrder
+      tags: [Orders]
+      summary: Check out
+      description: |
+        Prices are taken from the catalog; any price sent by the client is ignored.
+        The order is returned as `pending` and settles asynchronously.
+      security: [{ bearer: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: Repeating a request with the same key returns the original order (200) instead of creating another.
+          schema: { type: string, pattern: '^[\w\-]{8,100}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items:
+                    type: object
+                    required: [product_id, quantity]
+                    properties:
+                      product_id: { type: string, format: uuid }
+                      quantity: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "201": { $ref: "#/components/responses/Order" }
+        "200":
+          description: The order previously created with this `Idempotency-Key`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Order" }
+        "400":
+          description: Malformed `Idempotency-Key` (`invalid_idempotency_key`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /orders/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+    get:
+      operationId: getOrder
+      tags: [Orders]
+      summary: View an order
+      description: Someone else's order is reported as not found.
+      security: [{ bearer: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/Order" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /orders/{id}/cancel:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+    post:
+      operationId: cancelOrder
+      tags: [Orders]
+      summary: Cancel a pending or confirmed order
+      description: Reserved stock is returned to the catalog shortly afterwards.
+      security: [{ bearer: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/Order" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The order is already cancelled (`order_not_cancellable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from `/auth/login`, valid for 15 minutes.
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PerPage:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Value of `meta.next_cursor` from the previous page.
+      schema: { type: string }
+
+  responses:
+    Session:
+      description: The user with a new token pair.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+                  access_token: { type: string }
+                  token_type: { type: string, examples: [Bearer] }
+                  expires_in: { type: integer, description: Access token lifetime in seconds, examples: [900] }
+                  refresh_token: { type: string }
+    Category:
+      description: A category.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/Category" }
+    Product:
+      description: A product.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/Product" }
+    Order:
+      description: An order.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/Order" }
+    Unauthenticated:
+      description: Missing, invalid or expired access token (`unauthenticated`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The caller's role does not allow this (`forbidden`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such resource (`not_found`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationFailed:
+      description: Invalid input (`validation_failed`); `details.fields` maps each field to its messages.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              code: validation_failed
+              message: The email field must be a valid email address.
+              details:
+                fields:
+                  email: [The email field must be a valid email address.]
+    TooManyRequests:
+      description: Rate limit exceeded (`too_many_requests`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServiceUnavailable:
+      description: A service needed for this request is down (`service_unavailable`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, description: Stable machine-readable code, examples: [not_found] }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: integer, minimum: 0, description: Minor units (cents), examples: [129900] }
+        currency: { type: string, pattern: "^[A-Z]{3}$", examples: [USD] }
+    RefreshTokenRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [customer, admin] }
+        created_at: { type: string, format: date-time }
+    Category:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+    CategoryInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 255, description: Required on create. }
+        slug: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", description: Defaults to the name on create. }
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        sku: { type: string }
+        description: { type: [string, "null"] }
+        price: { $ref: "#/components/schemas/Money" }
+        is_active: { type: boolean }
+        stock: { type: integer, minimum: 0, description: Units available to order. }
+        category:
+          oneOf:
+            - { $ref: "#/components/schemas/Category" }
+            - { type: "null" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProductInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 255 }
+        slug: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", description: Defaults to the name on create. }
+        sku: { type: string, maxLength: 64 }
+        description: { type: [string, "null"], maxLength: 10000 }
+        price_amount: { type: integer, minimum: 0, description: Minor units (cents). }
+        currency: { type: string, pattern: "^[A-Z]{3}$", description: Defaults to USD on create. }
+        category_id: { type: [string, "null"], format: uuid }
+        is_active: { type: boolean, description: Defaults to true. }
+        stock: { type: integer, minimum: 0, maximum: 1000000, description: Defaults to 0. }
+    OrderStatus:
+      type: string
+      enum: [pending, confirmed, cancelled]
+      description: |
+        `pending`: waiting for stock to be reserved. `confirmed`: stock is reserved.
+        `cancelled`: see `cancellation_reason`.
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        cancellation_reason:
+          type: [string, "null"]
+          examples: [insufficient_stock, cancelled_by_customer, cancelled_by_admin]
+        total: { $ref: "#/components/schemas/Money" }
+        items:
+          type: array
+          items:
+            type: object
+            description: Product data as it was at checkout.
+            properties:
+              product_id: { type: string, format: uuid }
+              name: { type: string }
+              sku: { type: string }
+              quantity: { type: integer, minimum: 1 }
+              unit_price: { $ref: "#/components/schemas/Money" }
+              line_total: { $ref: "#/components/schemas/Money" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CursorLinks:
+      type: object
+      properties:
+        first: { type: [string, "null"] }
+        last: { type: [string, "null"] }
+        prev: { type: [string, "null"], format: uri }
+        next: { type: [string, "null"], format: uri }
+    CursorMeta:
+      type: object
+      properties:
+        path: { type: string, format: uri }
+        per_page: { type: integer }
+        next_cursor: { type: [string, "null"] }
+        prev_cursor: { type: [string, "null"] }

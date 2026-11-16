@@ -4,6 +4,7 @@ namespace Ecommerce\Shared\Messaging\Console;
 
 use Ecommerce\Shared\Messaging\EventPublisher;
 use Ecommerce\Shared\Messaging\OutboxRelay;
+use Ecommerce\Shared\Messaging\Pruner;
 use Ecommerce\Shared\Messaging\RabbitMqPublisher;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,7 @@ class RelayOutbox extends Command
 
     protected $description = 'Publish pending outbox events to RabbitMQ';
 
-    public function handle(OutboxRelay $relay, EventPublisher $publisher): int
+    public function handle(OutboxRelay $relay, EventPublisher $publisher, Pruner $pruner): int
     {
         $running = true;
         $this->trap([SIGTERM, SIGINT], function () use (&$running): void {
@@ -27,8 +28,19 @@ class RelayOutbox extends Command
 
         $this->components->info('Outbox relay started.');
 
+        $nextPruneAt = 0;
+
         while ($running) {
             try {
+                if (time() >= $nextPruneAt) {
+                    $deleted = $pruner->prune((int) config('messaging.retention_days'));
+                    $nextPruneAt = time() + 3600;
+
+                    if (array_sum($deleted) > 0) {
+                        Log::info('Old messaging rows pruned.', $deleted);
+                    }
+                }
+
                 $published = $relay->flush();
             } catch (Throwable $e) {
                 Log::error('Outbox relay failed; will retry.', ['error' => $e->getMessage()]);

@@ -8,6 +8,7 @@ use Ecommerce\Shared\Messaging\EventHandler;
 use Ecommerce\Shared\Messaging\EventPublisher;
 use Ecommerce\Shared\Messaging\Outbox;
 use Ecommerce\Shared\Messaging\OutboxRelay;
+use Ecommerce\Shared\Messaging\Pruner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
@@ -123,6 +124,30 @@ class MessagingTest extends TestCase
 
         $this->assertDatabaseCount('processed_messages', 0);
         $this->assertDatabaseMissing('outbox_messages', ['type' => 'side.effect']);
+    }
+
+    public function test_pruner_removes_only_old_published_and_processed_rows(): void
+    {
+        $row = fn (string $id, ?string $publishedAt) => [
+            'id' => "0193a1b2-0000-7000-8000-00000000000$id", 'type' => 't', 'body' => '{}',
+            'created_at' => now()->subDays(30), 'published_at' => $publishedAt,
+        ];
+        DB::table('outbox_messages')->insert([
+            $row('1', now()->subDays(10)),  // old and published: pruned
+            $row('2', now()->subDays(1)),   // recently published: kept
+            $row('3', null),                // old but never published: kept
+        ]);
+        DB::table('processed_messages')->insert([
+            ['id' => '0193a1b2-0000-7000-8000-000000000011', 'type' => 't', 'processed_at' => now()->subDays(10)],
+            ['id' => '0193a1b2-0000-7000-8000-000000000012', 'type' => 't', 'processed_at' => now()->subDays(1)],
+        ]);
+
+        $this->assertSame(['outbox' => 1, 'processed' => 1], (new Pruner)->prune(7));
+        $this->assertSame(
+            ['0193a1b2-0000-7000-8000-000000000002', '0193a1b2-0000-7000-8000-000000000003'],
+            DB::table('outbox_messages')->orderBy('id')->pluck('id')->all(),
+        );
+        $this->assertDatabaseCount('processed_messages', 1);
     }
 
     #[TestWith(['order.placed', 'order.placed', true])]

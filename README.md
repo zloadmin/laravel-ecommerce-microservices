@@ -23,7 +23,8 @@ An e-commerce REST API built as a set of independent Laravel services.
   same DB transaction as the change, and its `outbox:relay` worker publishes the row to the `ecommerce.events`
   topic exchange (routing key = event type). Delivery is at-least-once, so consumers deduplicate by event id.
   To consume, map patterns to handlers in the service's `config/messaging.php` and run `php artisan events:consume`;
-  an event that fails twice is parked in `<service>.events.dlq`.
+  an event that fails twice is parked in `<service>.events.dlq`. Published outbox rows and deduplication
+  records are pruned after 7 days (`MESSAGING_RETENTION_DAYS`) by the relay worker.
 - Every error uses one shape: `{"error": {"code", "message", "details"}}`.
 
 ## Getting started
@@ -48,7 +49,8 @@ Host ports are set in `.env` (see `.env.example`).
 
 ## API
 
-All paths are served by the gateway under `/api/v1`.
+All paths are served by the gateway under `/api/v1`. The full contract is in [`docs/openapi.yaml`](docs/openapi.yaml)
+(OpenAPI 3.1); paste it into any OpenAPI viewer to browse it.
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
@@ -107,6 +109,8 @@ Envelope: `id`, `type`, `source`, `occurred_at`, `correlation_id`, `payload`.
 make test s=gateway   # run one service's tests
 make test-all         # shared package and every service
 make test-shared
+make e2e              # checkout flow against the running stack (needs make seed)
+make lint             # code style check for every service
 make migrate          # run migrations for all services
 make sh s=gateway     # shell into a service container
 make logs s=gateway
@@ -114,3 +118,8 @@ make pint s=gateway   # format code
 make restart-workers  # reload code in the outbox and consumer workers
 make down
 ```
+
+## CI
+
+`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests: the shared package's tests,
+code style and tests for each service in parallel, then the end-to-end checkout test on the full Docker stack.
