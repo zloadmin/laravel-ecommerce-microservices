@@ -1,5 +1,5 @@
-SERVICES := gateway auth
-DB_SERVICES := auth
+SERVICES := gateway auth catalog
+DB_SERVICES := auth catalog
 s ?= gateway
 
 .PHONY: setup keys migrate seed up down ps logs sh test test-all pint
@@ -22,7 +22,7 @@ migrate: ## Run migrations for every service that owns a database
 		docker compose run --rm $$svc php artisan migrate --force || exit 1; \
 	done
 
-seed: ## Seed local development data (admin@example.com / password)
+seed: ## Seed local development data (admin@example.com / password, sample catalog)
 	@for svc in $(DB_SERVICES); do \
 		docker compose run --rm $$svc php artisan db:seed --force || exit 1; \
 	done

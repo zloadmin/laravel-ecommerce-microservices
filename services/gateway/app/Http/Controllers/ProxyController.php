@@ -36,9 +36,12 @@ class ProxyController extends Controller
         $headers = collect($request->headers->all())
             ->except(self::HOP_BY_HOP)
             ->map(fn (array $values) => implode(', ', $values))
-            ->put('X-Forwarded-For', $request->ip())
-            ->put('X-Forwarded-Host', $request->getHost())
-            ->put('X-Forwarded-Proto', $request->getScheme())
+            // Lowercase keys so these replace anything the client sent.
+            // Services trust them to build public URLs (pagination links).
+            ->put('x-forwarded-for', $request->ip())
+            ->put('x-forwarded-host', $request->getHost())
+            ->put('x-forwarded-port', (string) $request->getPort())
+            ->put('x-forwarded-proto', $request->getScheme())
             ->all();
 
         try {

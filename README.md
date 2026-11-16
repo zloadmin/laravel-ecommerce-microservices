@@ -8,7 +8,7 @@ An e-commerce REST API built as a set of independent Laravel services.
 |---|---|---|
 | Gateway | `services/gateway` | Single public entry point: routing, rate limiting, correlation IDs |
 | Auth | `services/auth` | Users, registration, login, JWT (RS256), refresh tokens |
-| Catalog | `services/catalog` (planned) | Products and categories |
+| Catalog | `services/catalog` | Products and categories, filtering, cursor pagination |
 | Orders | `services/orders` (planned) | Checkout and order lifecycle |
 | Shared package | `packages/shared` | Cross-cutting infrastructure code only (error format, JWT verification, middleware) |
 
@@ -27,7 +27,7 @@ Requires Docker with Compose.
 
 ```sh
 make setup   # env files, image build, composer install, app keys, JWT keys, migrations
-make seed    # optional: admin@example.com and customer@example.com, password "password"
+make seed    # optional: sample catalog, admin@example.com and customer@example.com (password "password")
 make up      # start the stack
 curl localhost:8080/api/v1/health
 ```
@@ -53,6 +53,16 @@ All paths are served by the gateway under `/api/v1`.
 | POST | `/auth/logout` | refresh token | Revokes the refresh token |
 | GET | `/users/me` | Bearer | Current user profile |
 | PATCH | `/users/me` | Bearer | Update name or password |
+| GET | `/categories`, `/categories/{id}` | none | List and view categories |
+| POST, PATCH, DELETE | `/categories`, `/categories/{id}` | admin | Manage categories |
+| GET | `/products` | none | List products (see filters below) |
+| GET | `/products/{id-or-slug}` | none | View a product |
+| POST, PATCH, DELETE | `/products`, `/products/{id}` | admin | Manage products |
+
+Product list parameters: `q` (name or SKU), `category` (id or slug), `min_price`, `max_price`, `ids[]`,
+`sort` (`newest`, `oldest`, `price`, `-price`, `name`, `-name`), `per_page` (max 100) and `cursor`
+(from `meta.next_cursor`). Prices are integers in minor units: `{"amount": 129900, "currency": "USD"}`.
+Guests and customers see only active products; admins see all.
 
 ## Common commands
 

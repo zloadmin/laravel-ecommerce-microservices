@@ -24,8 +24,9 @@ class GatewayTest extends TestCase
 
         $token = JwtTestKeys::token();
 
-        $this->withHeaders(['X-Correlation-ID' => 'test-correlation-1', 'Authorization' => "Bearer $token"])
-            ->getJson('/api/v1/products?page=2&filter[color]=red')
+        // A client-supplied forwarding header must not survive.
+        $this->withHeaders(['X-Correlation-ID' => 'test-correlation-1', 'Authorization' => "Bearer $token", 'X-Forwarded-Host' => 'evil.test'])
+            ->getJson('https://shop.example.com/api/v1/products?page=2&filter[color]=red')
             ->assertOk()
             ->assertJson(['data' => [['id' => 1]]])
             ->assertHeader('X-Upstream', 'catalog')
@@ -33,6 +34,9 @@ class GatewayTest extends TestCase
 
         Http::assertSent(fn (Request $request) => str_starts_with($request->url(), 'http://catalog:8080/api/v1/products?page=2&filter')
             && $request->hasHeader('X-Correlation-ID', 'test-correlation-1')
+            && $request->header('X-Forwarded-Host') === ['shop.example.com']
+            && $request->header('X-Forwarded-Port') === ['443']
+            && $request->header('X-Forwarded-Proto') === ['https']
             && $request->hasHeader('Authorization', "Bearer $token"));
     }
 

@@ -49,6 +49,23 @@ services:
       redis:
         condition: service_healthy
 
+  catalog:
+    <<: *php-service
+    working_dir: /workspace/services/catalog
+    environment:
+      APP_NAME: catalog
+      DB_HOST: postgres
+      DB_DATABASE: catalog
+      DB_USERNAME: ${POSTGRES_USER:-ecommerce}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      CACHE_STORE: redis
+      REDIS_HOST: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   postgres:
     image: postgres:17-alpine
     environment:
