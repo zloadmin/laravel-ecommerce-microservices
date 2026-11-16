@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Ecommerce\Shared\Testing\JwtTestKeys;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -21,7 +22,9 @@ class GatewayTest extends TestCase
     {
         Http::fake(['catalog:8080/*' => Http::response(['data' => [['id' => 1]]], 200, ['X-Upstream' => 'catalog'])]);
 
-        $this->withHeaders(['X-Correlation-ID' => 'test-correlation-1', 'Authorization' => 'Bearer abc'])
+        $token = JwtTestKeys::token();
+
+        $this->withHeaders(['X-Correlation-ID' => 'test-correlation-1', 'Authorization' => "Bearer $token"])
             ->getJson('/api/v1/products?page=2&filter[color]=red')
             ->assertOk()
             ->assertJson(['data' => [['id' => 1]]])
@@ -30,7 +33,7 @@ class GatewayTest extends TestCase
 
         Http::assertSent(fn (Request $request) => str_starts_with($request->url(), 'http://catalog:8080/api/v1/products?page=2&filter')
             && $request->hasHeader('X-Correlation-ID', 'test-correlation-1')
-            && $request->hasHeader('Authorization', 'Bearer abc'));
+            && $request->hasHeader('Authorization', "Bearer $token"));
     }
 
     public function test_body_and_upstream_status_are_passed_through(): void
@@ -71,5 +74,28 @@ class GatewayTest extends TestCase
         $this->getJson('/nothing-here')
             ->assertNotFound()
             ->assertJsonPath('error.code', 'not_found');
+    }
+
+    public function test_invalid_or_expired_token_is_rejected_before_reaching_a_service(): void
+    {
+        Http::fake();
+
+        foreach (['garbage', JwtTestKeys::token(claims: ['exp' => time() - 60])] as $token) {
+            $this->withToken($token)
+                ->getJson('/api/v1/orders')
+                ->assertStatus(401)
+                ->assertJsonPath('error.code', 'unauthenticated');
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_auth_routes_are_forwarded_even_with_an_expired_token(): void
+    {
+        Http::fake(['auth:8080/*' => Http::response(['data' => []])]);
+
+        $this->withToken(JwtTestKeys::token(claims: ['exp' => time() - 60]))
+            ->postJson('/api/v1/auth/refresh', ['refresh_token' => 'abc'])
+            ->assertOk();
     }
 }

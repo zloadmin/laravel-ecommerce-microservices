@@ -1,15 +1,30 @@
-SERVICES := gateway
+SERVICES := gateway auth
+DB_SERVICES := auth
 s ?= gateway
 
-.PHONY: setup up down ps logs sh test test-all pint
+.PHONY: setup keys migrate seed up down ps logs sh test test-all pint
 
-setup: ## First-time setup: env files, images, dependencies, app keys
+setup: ## First-time setup: env files, images, dependencies, app keys, JWT keys, databases
 	@test -f .env || cp .env.example .env
 	docker compose build gateway
 	@for svc in $(SERVICES); do \
 		test -f services/$$svc/.env || cp services/$$svc/.env.example services/$$svc/.env; \
-		docker compose run --rm --no-deps $$svc composer install; \
-		docker compose run --rm --no-deps $$svc php artisan key:generate --ansi; \
+		docker compose run --rm --no-deps $$svc composer install || exit 1; \
+		docker compose run --rm --no-deps $$svc php artisan key:generate --ansi || exit 1; \
+	done
+	$(MAKE) keys migrate
+
+keys: ## Generate the JWT key pair in infra/keys (kept if it already exists)
+	docker compose run --rm --no-deps auth php artisan jwt:generate-keys
+
+migrate: ## Run migrations for every service that owns a database
+	@for svc in $(DB_SERVICES); do \
+		docker compose run --rm $$svc php artisan migrate --force || exit 1; \
+	done
+
+seed: ## Seed local development data (admin@example.com / password)
+	@for svc in $(DB_SERVICES); do \
+		docker compose run --rm $$svc php artisan db:seed --force || exit 1; \
 	done
 
 up: ## Start the whole stack

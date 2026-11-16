@@ -72,7 +72,12 @@
     "repositories": [
         {
             "type": "path",
-            "url": "../../packages/shared"
+            "url": "../../packages/shared",
+            "options": {
+                "versions": {
+                    "ecommerce/shared": "dev-main"
+                }
+            }
         }
     ]
 }
